@@ -1,4 +1,4 @@
-import React, { Component, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 const synth = window.speechSynthesis;
 
@@ -34,140 +34,133 @@ interface GuesserState {
     guess: string;
     complete: boolean;
     correct: boolean;
+    timeout: number;
 }
 
-export class Guesser extends Component<GuesserProps, GuesserState> {
-    constructor(props: GuesserProps) {
-        super(props);
-        console.log('Guesser.render() target=' + props.target);
-        speak(props.target);
-        this.state = {
-            guess: '',
-            complete: false,
-            correct: true,
-        };
-        this.onKeyDown = this.onKeyDown.bind(this);
-    }
+function Guesser({ target, callback }: GuesserProps) {
+    let [guess, setGuess] = useState<GuesserState>({
+        guess: '',
+        correct: true,
+        complete: false,
+        timeout: 0,
+    });
 
-    onKeyDown(e: KeyboardEvent) {
-        console.log(`keydown ${e.key}`);
-        const key = e.key.toLowerCase();
-        if (key == 'backspace' && this.state.guess.length > 0) {
-            this.setState({
-                guess: this.state.guess.substring(
-                    0,
-                    this.state.guess.length - 1
-                ),
-            });
-        } else if (
-            key.length == 1 &&
-            key >= 'a' &&
-            key <= 'z' &&
-            !this.state.complete
-        ) {
-            const guess = this.state.guess + key;
-            const complete = guess === this.props.target;
-            const correct =
-                this.state.correct && this.props.target.startsWith(guess);
-            if (complete) {
-                console.log('Complete: ' + guess);
-                setTimeout(() => this.props.callback(correct), CompleteTimeout);
+    // const [complete, setComplete] = useState(false);
+    // const [correct, setCorrect] = useState(true);
+    // const [guess, setGuess] = useState('');
+
+    console.log(
+        `Guesser guess=${guess.guess} complete=${guess.complete} correct=${guess.correct}`
+    );
+
+    const onKeyDown = (e: KeyboardEvent) => {
+        console.log(`keydown ${e.key} state=${JSON.stringify(guess)}`);
+        setGuess((g) => {
+            if (g.complete) {
+                return g;
             }
-            this.setState({
-                guess: guess,
-                complete: complete,
-                correct: correct,
-            });
-        }
-    }
+            const key = e.key.toLowerCase();
+            if (key == 'backspace' && guess.guess.length > 0) {
+                const f = {
+                    ...g,
+                    guess: g.guess.substring(0, guess.guess.length - 1),
+                };
+                console.log(`SetState ${JSON.stringify(f)}`);
+                return f;
+            } else if (key.length == 1 && key >= 'a' && key <= 'z') {
+                console.log(`setGuess g=${JSON.stringify(g)} key=${key}`);
+                const complete = g.guess + key === target;
+                const f = {
+                    guess: g.guess + key,
+                    complete: complete,
+                    correct: g.correct && target.startsWith(g.guess),
+                    timeout:
+                        complete && g.timeout == 0
+                            ? setTimeout(callback, CompleteTimeout)
+                            : g.timeout,
+                };
+                console.log(`SetState ${JSON.stringify(f)}`);
+                return f;
+            }
+            return g;
+        });
+    };
 
-    componentDidMount() {
+    useEffect(() => {
         console.log('Guesser.componentDidMount() Add keydown listener');
-        window.addEventListener('keydown', this.onKeyDown);
+        window.addEventListener('keydown', onKeyDown);
+        speak(target);
+
+        return () => {
+            console.log(
+                'Guesser.componentWillUnmount() remove keydown listener'
+            );
+            window.removeEventListener('keydown', onKeyDown);
+        };
+    }, [target]);
+
+    let chars = [];
+    for (let i = 0; i < guess.guess.length; i++) {
+        const ch = guess.guess[i];
+        let t = i < target.length ? target[i] : '';
+        let className = ch == t ? 'correct' : 'wrong';
+        chars.push({ className: className, ch: ch });
     }
+    // todo render correct/not.
+    // todo timeout to advance word.
+    // Complete: <span>{guess.complete ? 'True' : 'False'}</span>
 
-    componentWillUnmount() {
-        console.log('Guesser.componentWillUnmount() remove keydown listener');
-        window.removeEventListener('keydown', this.onKeyDown);
-    }
-
-    render() {
-        console.log('Guesser.render()');
-
-        let chars = [];
-        for (let i = 0; i < this.state.guess.length; i++) {
-            const ch = this.state.guess[i];
-            let t = i < this.props.target.length ? this.props.target[i] : '';
-            let className = ch == t ? 'correct' : 'wrong';
-            chars.push({ className: className, ch: ch });
-        }
-        // todo render correct/not.
-        // todo timeout to advance word.
-        return (
+    return (
+        <div>
+            <div>Complete: {JSON.stringify(guess.complete)}</div>
+            <div>Correct: {JSON.stringify(guess.correct)}</div>
+            <div>Guess: {guess.guess}</div>
             <div className="guess">
                 {chars.map((obj, i) => (
                     <span className={obj.className}>{obj.ch}</span>
                 ))}
             </div>
-        );
-    }
+        </div>
+    );
 }
 
 interface SpellTestProps {
     words: string[];
 }
 
-interface SpellTestState {
-    targetIndex: number;
-}
+function SpellTest({ words }: SpellTestProps) {
+    const [targetIndex, setTargetIndex] = useState(0);
 
-export class SpellTest extends Component<SpellTestProps, SpellTestState> {
-    constructor(props: SpellTestProps) {
-        super(props);
-        this.state = {
-            targetIndex: 0,
-        };
-        this.nextWordCallback = this.nextWordCallback.bind(this);
-    }
-
-    nextWordCallback(correct: boolean) {
+    const nextWordCallback = (correct: boolean) => {
         console.log('Callback correct:' + correct);
-        if (this.state.targetIndex + 1 === this.props.words.length) {
+        if (targetIndex + 1 === words.length) {
             // End of round.
             console.log('TODO: End round');
         } else {
             console.log('Increment');
-            this.setState({
-                targetIndex: this.state.targetIndex + 1,
-            });
+            setTargetIndex((i) => i + 1);
         }
-    }
+    };
 
-    render() {
-        const target = this.props.words[this.state.targetIndex];
-        console.log(`SpellTest.render() target=${target}`);
-        return (
-            <div>
-                <Guesser target={target} callback={this.nextWordCallback} />
-                <button onClick={() => speak(target)}>Word</button>
-            </div>
-        );
-    }
+    const target = words[targetIndex];
+    console.log(`SpellTest.render() target=${target}`);
+    // Note: key={target} controls when React will re-render.
+    return (
+        <div>
+            <Guesser target={target} callback={nextWordCallback} key={target} />
+            <button onClick={() => speak(target)}>Word</button>
+        </div>
+    );
 }
 
-export class App extends Component {
-    constructor(props) {
-        super(props);
-    }
-    render() {
-        const words = ['one', 'two', 'three'];
-        return (
+export default function App() {
+    const words = ['one', 'two', 'three'];
+    return (
+        <div>
+            <h1>Hello world from react!</h1>
             <div>
-                <h1>Hello world from react!</h1>
-                <div>
-                    <SpellTest words={words} />
-                </div>
+                <SpellTest words={words} />
             </div>
-        );
-    }
+        </div>
+    );
 }
