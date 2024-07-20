@@ -1,5 +1,10 @@
 # Spellz
 
+[https://cpearce.github.io/spelltest/](https://cpearce.github.io/spelltest/)
+
+To develop:
+
 ```
-npx parcel src/index.html
+npm install
+npm start
 ```
