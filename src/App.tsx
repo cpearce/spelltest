@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { SpellingWords } from './wordList';
 
 const synth = window.speechSynthesis;
 
@@ -9,8 +10,10 @@ function speak(words: string) {
         console.error('speechSynthesis.speaking');
         return;
     }
+    console.log(`Speak(${words})`);
 
     const utterThis = new SpeechSynthesisUtterance(words);
+    utterThis.rate = 0.65;
 
     utterThis.onend = function (event) {
         console.log('SpeechSynthesisUtterance.onend');
@@ -34,7 +37,6 @@ interface GuesserState {
     guess: string;
     complete: boolean;
     correct: boolean;
-    timeout: number;
 }
 
 function Guesser({ target, callback }: GuesserProps) {
@@ -42,12 +44,7 @@ function Guesser({ target, callback }: GuesserProps) {
         guess: '',
         correct: true,
         complete: false,
-        timeout: 0,
     });
-
-    // const [complete, setComplete] = useState(false);
-    // const [correct, setCorrect] = useState(true);
-    // const [guess, setGuess] = useState('');
 
     console.log(
         `Guesser guess=${guess.guess} complete=${guess.complete} correct=${guess.correct}`
@@ -59,26 +56,30 @@ function Guesser({ target, callback }: GuesserProps) {
             if (g.complete) {
                 return g;
             }
-            const key = e.key.toLowerCase();
-            if (key == 'backspace' && guess.guess.length > 0) {
+            const key = e.key;
+            if (key == 'Backspace' && g.guess.length > 0) {
                 const f = {
                     ...g,
-                    guess: g.guess.substring(0, guess.guess.length - 1),
+                    guess: g.guess.substring(0, g.guess.length - 1),
                 };
                 console.log(`SetState ${JSON.stringify(f)}`);
                 return f;
-            } else if (key.length == 1 && key >= 'a' && key <= 'z') {
+            } else if (
+                key.length == 1 &&
+                ((key.toLowerCase() >= 'a' && key.toLowerCase() <= 'z') ||
+                    key == "'")
+            ) {
                 console.log(`setGuess g=${JSON.stringify(g)} key=${key}`);
                 const complete = g.guess + key === target;
+                const correct = g.correct && target.startsWith(g.guess + key);
                 const f = {
                     guess: g.guess + key,
                     complete: complete,
-                    correct: g.correct && target.startsWith(g.guess),
-                    timeout:
-                        complete && g.timeout == 0
-                            ? setTimeout(callback, CompleteTimeout)
-                            : g.timeout,
+                    correct: correct,
                 };
+                if (complete) {
+                    callback(correct);
+                }
                 console.log(`SetState ${JSON.stringify(f)}`);
                 return f;
             }
@@ -86,15 +87,11 @@ function Guesser({ target, callback }: GuesserProps) {
         });
     };
 
+    // On mount, attach keydown listener, and say the word to spell.
     useEffect(() => {
-        console.log('Guesser.componentDidMount() Add keydown listener');
         window.addEventListener('keydown', onKeyDown);
         speak(target);
-
         return () => {
-            console.log(
-                'Guesser.componentWillUnmount() remove keydown listener'
-            );
             window.removeEventListener('keydown', onKeyDown);
         };
     }, [target]);
@@ -106,61 +103,161 @@ function Guesser({ target, callback }: GuesserProps) {
         let className = ch == t ? 'correct' : 'wrong';
         chars.push({ className: className, ch: ch });
     }
-    // todo render correct/not.
-    // todo timeout to advance word.
-    // Complete: <span>{guess.complete ? 'True' : 'False'}</span>
+
+    const className =
+        target.startsWith(guess.guess) && guess.guess.length > 0
+            ? 'correct'
+            : 'wrong';
 
     return (
         <div>
-            <div>Complete: {JSON.stringify(guess.complete)}</div>
-            <div>Correct: {JSON.stringify(guess.correct)}</div>
-            <div>Guess: {guess.guess}</div>
-            <div className="guess">
-                {chars.map((obj, i) => (
-                    <span className={obj.className}>{obj.ch}</span>
-                ))}
+            <div id="guess" className={className}>
+                {guess.guess}
             </div>
         </div>
     );
 }
 
+type SpellTestCompleteCB = () => void;
+
 interface SpellTestProps {
     words: string[];
+    callback: SpellTestCompleteCB;
 }
 
-function SpellTest({ words }: SpellTestProps) {
+enum TestProgress {
+    Testing,
+    NextTransition,
+    Complete,
+}
+
+function SpellTest({ words, callback }: SpellTestProps) {
     const [targetIndex, setTargetIndex] = useState(0);
+    const [complete, setComplete] = useState(false);
+    const [state, setState] = useState<TestProgress>(TestProgress.Testing);
+    const [numCorrect, setNumCorrect] = useState(0);
+    const [numWrong, setNumWrong] = useState(0);
 
     const nextWordCallback = (correct: boolean) => {
         console.log('Callback correct:' + correct);
+        if (correct) {
+            setNumCorrect((n) => n + 1);
+        } else {
+            setNumWrong((n) => n + 1);
+        }
         if (targetIndex + 1 === words.length) {
             // End of round.
-            console.log('TODO: End round');
+            setState(TestProgress.Complete);
+            setTimeout(callback, CompleteTimeout);
         } else {
-            console.log('Increment');
+            setState(TestProgress.NextTransition);
             setTargetIndex((i) => i + 1);
+            setTimeout(() => setState(TestProgress.Testing), CompleteTimeout);
         }
     };
 
     const target = words[targetIndex];
     console.log(`SpellTest.render() target=${target}`);
     // Note: key={target} controls when React will re-render.
-    return (
-        <div>
-            <Guesser target={target} callback={nextWordCallback} key={target} />
-            <button onClick={() => speak(target)}>Word</button>
-        </div>
-    );
+    switch (state) {
+        case TestProgress.Testing:
+            return (
+                <div>
+                    <button onClick={() => speak(target)}>Speak word</button>
+                    <Guesser
+                        target={target}
+                        callback={nextWordCallback}
+                        key={target}
+                    />
+                </div>
+            );
+        case TestProgress.NextTransition:
+            const previous = words[targetIndex - 1];
+            return (
+                <div>
+                    <div id="guess" className="correct">
+                        {previous}
+                    </div>
+                    <div>Correct!</div>
+                </div>
+            );
+        case TestProgress.Complete:
+            return (
+                <div>
+                    Group complete! {numCorrect} of {numCorrect + numWrong}{' '}
+                    correct!
+                </div>
+            );
+    }
+}
+
+enum Screen {
+    ChooseYearGroup,
+    ChooseWordList,
+    RunSpellTest,
 }
 
 export default function App() {
-    const words = ['one', 'two', 'three'];
-    return (
-        <div>
-            <h1>Hello world from react!</h1>
+    const [state, setState] = useState<Screen>(Screen.ChooseYearGroup);
+    const [year, setYear] = useState('');
+    const chooseYear = (key: string) => {
+        console.log(`ChooseYear ${key}`);
+        setState(Screen.ChooseWordList);
+        setYear(key);
+    };
+    const [words, setWords] = useState<string[]>([]);
+    const chooseWordList = (wordList: string[]) => {
+        console.log(`ChooseWordlist ${wordList}`);
+        setState(Screen.RunSpellTest);
+        setWords(wordList);
+    };
+
+    console.log(`App state=${state}`);
+
+    if (state === Screen.ChooseYearGroup) {
+        return (
             <div>
-                <SpellTest words={words} />
+                <h1>Spell test</h1>
+                <div>Select spelling year group:</div>
+                {Object.keys(SpellingWords).map((key, index) => (
+                    <div>
+                        <button onClick={() => chooseYear(key)}>{key}</button>
+                    </div>
+                ))}
             </div>
-        </div>
-    );
+        );
+    } else if (state === Screen.ChooseWordList) {
+        const listNames = Object.keys(SpellingWords[year]);
+        return (
+            <div>
+                <h1>Spell test</h1>
+                <div>Select word list:</div>
+                {listNames.map((key, index) => (
+                    <div>
+                        <button
+                            onClick={() =>
+                                chooseWordList(SpellingWords[year][key])
+                            }
+                        >
+                            {key}
+                        </button>
+                    </div>
+                ))}
+            </div>
+        );
+    } else if (state === Screen.RunSpellTest) {
+        const callback = () => {
+            setState(Screen.ChooseYearGroup);
+        };
+        return (
+            <div>
+                <h1>Spell test</h1>
+                <div>
+                    <SpellTest words={words} callback={callback} />
+                </div>
+            </div>
+        );
+    } else {
+        <div>Unknown state</div>;
+    }
 }

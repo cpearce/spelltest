@@ -1,16 +1,11 @@
-h1 {
-    color: hotpink;
-    font-family: cursive;
+div#guess {
+    font-size: 24pt;
 }
 
-span.correct {
+div.correct {
     color: green;
 }
 
-span.wrong {
-    color: blue;
-}
-
-div.guess {
-    font-size: 24pt;
+div.wrong {
+    color: red;
 }
