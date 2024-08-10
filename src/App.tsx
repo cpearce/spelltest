@@ -30,6 +30,7 @@ type GuessCompleteCB = (correct: boolean) => void;
 
 interface GuesserProps {
     target: string;
+    sentence: string;
     callback: GuessCompleteCB;
 }
 
@@ -39,7 +40,7 @@ interface GuesserState {
     correct: boolean;
 }
 
-function Guesser({ target, callback }: GuesserProps) {
+function Guesser({ target, sentence, callback }: GuesserProps) {
     let [guess, setGuess] = useState<GuesserState>({
         guess: '',
         correct: true,
@@ -51,6 +52,7 @@ function Guesser({ target, callback }: GuesserProps) {
     );
 
     const onKeyDown = (e: KeyboardEvent) => {
+        e.preventDefault();
         console.log(`keydown ${e.key} state=${JSON.stringify(guess)}`);
         setGuess((g) => {
             if (g.complete) {
@@ -90,7 +92,7 @@ function Guesser({ target, callback }: GuesserProps) {
     // On mount, attach keydown listener, and say the word to spell.
     useEffect(() => {
         window.addEventListener('keydown', onKeyDown);
-        speak(target);
+        speak(sentence);
         return () => {
             window.removeEventListener('keydown', onKeyDown);
         };
@@ -131,6 +133,15 @@ enum TestProgress {
     Complete,
 }
 
+function split(s: string): [string, string] {
+    const i = s.indexOf('...');
+    if (i < 0) {
+        return [s, ''];
+    }
+    const word = s.substring(0, i);
+    return [word, s];
+}
+
 function SpellTest({ words, callback }: SpellTestProps) {
     const [targetIndex, setTargetIndex] = useState(0);
     const [complete, setComplete] = useState(false);
@@ -156,23 +167,28 @@ function SpellTest({ words, callback }: SpellTestProps) {
         }
     };
 
-    const target = words[targetIndex];
-    console.log(`SpellTest.render() target=${target}`);
+    const [target, sentence] = split(words[targetIndex]);
+
+    console.log(`SpellTest.render() target=${target} sentence=${sentence}`);
     // Note: key={target} controls when React will re-render.
     switch (state) {
         case TestProgress.Testing:
             return (
                 <div>
                     <button onClick={() => speak(target)}>Speak word</button>
+                    <button onClick={() => speak(sentence)}>
+                        Speak Sentence
+                    </button>
                     <Guesser
                         target={target}
+                        sentence={sentence}
                         callback={nextWordCallback}
                         key={target}
                     />
                 </div>
             );
         case TestProgress.NextTransition:
-            const previous = words[targetIndex - 1];
+            const [previous, _] = split(words[targetIndex - 1]);
             return (
                 <div>
                     <div id="guess" className="correct">
